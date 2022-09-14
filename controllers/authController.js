@@ -14,6 +14,8 @@ exports.signup = catchAsync(async (req, res, next) => {
         email: req.body.email,
         password: req.body.password,
         passwordConfirm: req.body.passwordConfirm,
+        passwordChangedAt: req.body.passwordChangedAt,
+        role: req.body.role
     });
 
     const token = signToken(newUser._id);
@@ -59,17 +61,29 @@ exports.protect = catchAsync(async (req, res, next) => {
         return next(new AppError('You are not logged in! Please log in to access', 400));
     }
     //2) validate token
-
-    const decoded = await promisify(jwt.verify)(token,process.env.JWT_SECRET)
-    console.log(decoded);
+    const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
 
     //3 check if user still exist
-    const freshUser = await User.findById(decoded.id);
+    const currentUser = await User.findById(decoded.id);
 
-    if(!freshUser){
-        return next(new AppError('Token benging to this user does no longer exist', 400));
+    if(!currentUser){
+        return next(new AppError('Token benging to this user does no longer exist', 401));
+    }
+    //4 check if user change password
+    if(currentUser.changedPasswordAfter(decoded.iat)){
+        return next(new AppError('User recently changed password, Please login again', 401));
     }
 
-    //4 check if user change password
+    //Grant access to user
+    req.user = currentUser;
     next();
 })
+
+exports.restricTo = (...roles) => {
+    return (req, res, next) => {
+        if(!roles.includes(req.user.role)){
+            return next(new AppError('You do not have permission to perform this action', 403));
+        }
+    next();
+    };
+}
